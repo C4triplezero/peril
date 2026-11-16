@@ -28,7 +28,7 @@ func main() {
 		log.Fatalf("could not create channel: %v", err)
 	}
 
-	_, queue, err := pubsub.DeclareAndBind(conn, routing.ExchangePerilDirect, routing.GameLogSlug, routing.GameLogSlug+".*", "durable")
+	_, queue, err := pubsub.DeclareAndBind(conn, routing.ExchangePerilTopic, routing.GameLogSlug, routing.GameLogSlug+".*", pubsub.DurableQueue)
 	if err != nil {
 		log.Fatalf("could not create gamelogs queue: %v", err)
 	}

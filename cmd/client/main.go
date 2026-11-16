@@ -21,21 +21,41 @@ func main() {
 		log.Fatalf("could not connect to RabbitMQ: %v", err)
 	}
 	defer conn.Close()
-
 	fmt.Println("Connection to RabbitMQ established successfully!")
+
+	ch, err := conn.Channel()
+	if err != nil {
+		log.Fatalf("could not create channel: %v", err)
+	}
 
 	username, err := gamelogic.ClientWelcome()
 	if err != nil {
 		log.Fatalf("could not get username: %v", err)
 	}
 
-	_, queue, err := pubsub.DeclareAndBind(conn, routing.ExchangePerilDirect, routing.PauseKey+"."+username, routing.PauseKey, "transient")
+	gamestate := gamelogic.NewGameState(username)
+
+	err = pubsub.SubscribeJSON(
+		conn,
+		routing.ExchangePerilDirect,
+		routing.PauseKey+"."+gamestate.GetUsername(),
+		routing.PauseKey,
+		pubsub.TransientQueue,
+		handlerPause(gamestate),
+	)
+
 	if err != nil {
 		log.Fatalf("could not subscribe to pause: %v", err)
 	}
-	fmt.Printf("Queue %v declared and bound!\n", queue.Name)
 
-	gamestate := gamelogic.NewGameState(username)
+	err = pubsub.SubscribeJSON(
+		conn,
+		routing.ExchangePerilTopic,
+		routing.ArmyMovesPrefix+"."+gamestate.GetUsername(),
+		routing.ArmyMovesPrefix+".*",
+		pubsub.TransientQueue,
+		handlerArmyMoves(gamestate),
+	)
 
 	gamelogic.PrintClientHelp()
 
@@ -49,17 +69,24 @@ func main() {
 			err = gamestate.CommandSpawn(words)
 			if err != nil {
 				fmt.Printf("Error executing spawn command: %v\n", err)
+				continue
 			}
 		case "move":
-			_, err := gamestate.CommandMove(words)
+			move, err := gamestate.CommandMove(words)
 			if err != nil {
 				fmt.Printf("Error executing move command: %v\n", err)
+				continue
 			}
+			err = pubsub.PublishJSON(ch, routing.ExchangePerilTopic, routing.ArmyMovesPrefix+"."+gamestate.GetUsername(), move)
+			if err != nil {
+				fmt.Printf("Error publishing move: %v\n", err)
+				continue
+			}
+			fmt.Printf("Moved %v units to %s\n", len(move.Units), move.ToLocation)
 		case "status":
 			gamestate.CommandStatus()
 		case "help":
 			gamelogic.PrintClientHelp()
-			continue
 		case "spam":
 			fmt.Println("Spamming not allowed yet!")
 		case "quit":
