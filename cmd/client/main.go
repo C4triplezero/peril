@@ -54,8 +54,25 @@ func main() {
 		routing.ArmyMovesPrefix+"."+gamestate.GetUsername(),
 		routing.ArmyMovesPrefix+".*",
 		pubsub.TransientQueue,
-		handlerArmyMoves(gamestate),
+		handlerArmyMoves(gamestate, ch),
 	)
+
+	if err != nil {
+		log.Fatalf("could not subscribe to army moves: %v", err)
+	}
+
+	err = pubsub.SubscribeJSON(
+		conn,
+		routing.ExchangePerilTopic,
+		routing.WarRecognitionsPrefix,
+		routing.WarRecognitionsPrefix+".*",
+		pubsub.DurableQueue,
+		handlerHandleWar(gamestate),
+	)
+
+	if err != nil {
+		log.Fatalf("could not subscribe to war recognitions: %v", err)
+	}
 
 	gamelogic.PrintClientHelp()
 

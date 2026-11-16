@@ -20,13 +20,21 @@ func PublishJSON[T any](ch *amqp.Channel, exchange, key string, val T) error {
 	})
 }
 
+type AckType int
+
+const (
+	Ack AckType = iota
+	NackRequeue
+	NackDiscard
+)
+
 func SubscribeJSON[T any](
 	conn *amqp.Connection,
 	exchange,
 	queueName,
 	key string,
 	queueType SimpleQueueType,
-	handler func(T),
+	handler func(T) AckType,
 ) error {
 	ch, queue, err := DeclareAndBind(conn, exchange, queueName, key, queueType)
 	if err != nil {
@@ -60,18 +68,25 @@ func SubscribeJSON[T any](
 				fmt.Printf("could not unmarshal message: %v\n", err)
 				continue
 			}
-			handler(target)
-			msg.Ack(false)
+			ack := handler(target)
+			switch ack {
+			case Ack:
+				msg.Ack(false)
+			case NackRequeue:
+				msg.Nack(false, true)
+			case NackDiscard:
+				msg.Nack(false, false)
+			}
 		}
 	}()
 	return nil
 }
 
-type SimpleQueueType string
+type SimpleQueueType int
 
 const (
-	DurableQueue   SimpleQueueType = "durable"
-	TransientQueue SimpleQueueType = "transient"
+	DurableQueue SimpleQueueType = iota
+	TransientQueue
 )
 
 func DeclareAndBind(conn *amqp.Connection, exchange, queueName, key string, queueType SimpleQueueType) (*amqp.Channel, amqp.Queue, error) {
@@ -86,7 +101,7 @@ func DeclareAndBind(conn *amqp.Connection, exchange, queueName, key string, queu
 		queueType != DurableQueue, // delete when unused
 		queueType != DurableQueue, // exclusive
 		false,                     // no-wait
-		nil,                       // args
+		amqp.Table{"x-dead-letter-exchange": "peril_dlx"}, // args
 	)
 	if err != nil {
 		return nil, amqp.Queue{}, fmt.Errorf("could not declare queue: %v", err)
