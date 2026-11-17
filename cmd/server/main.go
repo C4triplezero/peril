@@ -34,6 +34,18 @@ func main() {
 	}
 	fmt.Printf("Queue %v declared and bound!\n", queue.Name)
 
+	err = pubsub.SubscribeGob(
+		conn,
+		routing.ExchangePerilTopic,
+		routing.GameLogSlug,
+		"*",
+		pubsub.DurableQueue,
+		handlerLogs(),
+	)
+	if err != nil {
+		log.Fatalf("could not starting consuming logs: %v", err)
+	}
+
 	gamelogic.PrintServerHelp()
 
 	for {
